@@ -4,6 +4,12 @@ const COLS = 10;
 const ROWS = 20;
 const BLOCK = 30;
 const WILDCARD = 8;
+const TETROMINO_MAX_TYPE = 7;
+const TYPE_PLUS = 9;
+const TYPE_U = 10;
+const TYPE_Y = 11;
+const TYPE_SINGLE = 12;
+const TYPE_HOLLOW = 13;
 
 const COLORS = [
   null,
@@ -15,6 +21,11 @@ const COLORS = [
   "#7986cb", // J - indigo
   "#90caf9", // L - pale blue
   "#f06292",
+  "#ffb74d", // + - orange
+  "#4db6ac", // U - teal
+  "#aed581", // Y - lime
+  "#fff176", // 1x1 - bright yellow
+  "#ef5350", // 3x3 hollow - challenge red
 ];
 
 const PIECES = [
@@ -54,6 +65,27 @@ const PIECES = [
     [7, 7, 7],
     [0, 0, 0],
   ], // L
+  [
+    [0, TYPE_PLUS, 0],
+    [TYPE_PLUS, TYPE_PLUS, TYPE_PLUS],
+    [0, TYPE_PLUS, 0],
+  ], // +
+  [
+    [TYPE_U, 0, TYPE_U],
+    [TYPE_U, TYPE_U, TYPE_U],
+  ], // U
+  [
+    [0, TYPE_Y, 0],
+    [TYPE_Y, TYPE_Y, 0],
+    [0, TYPE_Y, 0],
+    [0, TYPE_Y, 0],
+  ], // Y
+  [[TYPE_SINGLE]], // 1x1
+  [
+    [TYPE_HOLLOW, TYPE_HOLLOW, TYPE_HOLLOW],
+    [TYPE_HOLLOW, 0, TYPE_HOLLOW],
+    [TYPE_HOLLOW, TYPE_HOLLOW, TYPE_HOLLOW],
+  ], // 3x3 hollow
 ];
 
 const LINE_SCORES = [0, 100, 300, 500, 800];
@@ -62,6 +94,22 @@ const SPECIAL_LINES_THRESHOLD = 3;
 const SPECIAL_PITY_LINES = 12;
 const SPECIAL_BASE_CHANCE = 0.15;
 const FREEZE_DURATION_MS = 5000;
+const SPECIAL_SHAPE_THRESHOLD_LINES = 6;
+const SPECIAL_SHAPE_PITY_LINES = 9;
+const SPECIAL_SHAPE_BASE_CHANCE = 0.25;
+const SPECIAL_SHAPE_STEP_CHANCE = 0.2;
+const SPECIAL_SHAPE_MAX_CHANCE = 0.8;
+const HOLLOW_COOLDOWN_SPAWNS = 6;
+const SINGLE_REWARD_WINDOW_SPAWNS = 3;
+
+const SPECIAL_SHAPE_WEIGHTS = [
+  { type: TYPE_PLUS, weight: 35 },
+  { type: TYPE_U, weight: 30 },
+  { type: TYPE_Y, weight: 20 },
+  { type: TYPE_HOLLOW, weight: 15 },
+];
+
+const NON_ROTATABLE_TYPES = new Set([TYPE_PLUS, TYPE_SINGLE]);
 
 const canvas = document.getElementById("board");
 const ctx = canvas.getContext("2d");
@@ -91,13 +139,16 @@ let board,
   dropInterval,
   animId;
 let linesSinceSpecial, freezeRemainingMs, nextRayIsRow;
+let linesSinceSpecialShape,
+  pendingSingleRewards,
+  singleRewardSpawnsLeft,
+  hollowCooldownSpawns;
 
 function createBoard() {
   return Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
 }
 
-function randomPiece() {
-  const type = Math.floor(Math.random() * 7) + 1;
+function createPieceByType(type) {
   const shape = PIECES[type].map((row) => [...row]);
   return {
     type,
@@ -106,6 +157,52 @@ function randomPiece() {
     y: 0,
     powerUpKind: null,
   };
+}
+
+function randomTetrominoPiece() {
+  const type = Math.floor(Math.random() * TETROMINO_MAX_TYPE) + 1;
+  return createPieceByType(type);
+}
+
+function rollWeightedType(options) {
+  const totalWeight = options.reduce((acc, item) => acc + item.weight, 0);
+  let roll = Math.random() * totalWeight;
+  for (const option of options) {
+    roll -= option.weight;
+    if (roll <= 0) return option.type;
+  }
+  return options[options.length - 1].type;
+}
+
+function getSpecialShapeSpawnChance() {
+  const overflow = Math.max(
+    0,
+    linesSinceSpecialShape - SPECIAL_SHAPE_THRESHOLD_LINES,
+  );
+  return Math.min(
+    SPECIAL_SHAPE_MAX_CHANCE,
+    SPECIAL_SHAPE_BASE_CHANCE + overflow * SPECIAL_SHAPE_STEP_CHANCE,
+  );
+}
+
+function shouldSpawnSpecialShape() {
+  if (linesSinceSpecialShape < SPECIAL_SHAPE_THRESHOLD_LINES) return false;
+  if (linesSinceSpecialShape >= SPECIAL_SHAPE_PITY_LINES) return true;
+  return Math.random() < getSpecialShapeSpawnChance();
+}
+
+function pickSpecialShapeType() {
+  const options =
+    hollowCooldownSpawns > 0
+      ? SPECIAL_SHAPE_WEIGHTS.filter((entry) => entry.type !== TYPE_HOLLOW)
+      : SPECIAL_SHAPE_WEIGHTS;
+  return rollWeightedType(options);
+}
+
+function shouldSpawnRewardSingle() {
+  if (pendingSingleRewards <= 0 || singleRewardSpawnsLeft <= 0) return false;
+  if (singleRewardSpawnsLeft === 1) return true;
+  return Math.random() < 1 / singleRewardSpawnsLeft;
 }
 
 function pickRandomPowerUp() {
@@ -128,7 +225,29 @@ function shouldSpawnSpecialPiece() {
 }
 
 function createNextPiece() {
-  const piece = randomPiece();
+  if (hollowCooldownSpawns > 0) hollowCooldownSpawns--;
+
+  if (shouldSpawnRewardSingle()) {
+    pendingSingleRewards--;
+    if (pendingSingleRewards > 0) {
+      singleRewardSpawnsLeft = SINGLE_REWARD_WINDOW_SPAWNS;
+    } else {
+      singleRewardSpawnsLeft = 0;
+    }
+    return createPieceByType(TYPE_SINGLE);
+  }
+
+  if (singleRewardSpawnsLeft > 0) singleRewardSpawnsLeft--;
+
+  if (shouldSpawnSpecialShape()) {
+    const type = pickSpecialShapeType();
+    const piece = createPieceByType(type);
+    linesSinceSpecialShape = 0;
+    if (type === TYPE_HOLLOW) hollowCooldownSpawns = HOLLOW_COOLDOWN_SPAWNS;
+    return piece;
+  }
+
+  const piece = randomTetrominoPiece();
   if (shouldSpawnSpecialPiece()) {
     piece.powerUpKind = pickRandomPowerUp();
     linesSinceSpecial = 0;
@@ -159,6 +278,7 @@ function rotateCW(shape) {
 }
 
 function tryRotate() {
+  if (NON_ROTATABLE_TYPES.has(current.type)) return;
   const rotated = rotateCW(current.shape);
   const kicks = [0, -1, 1, -2, 2];
   for (const kick of kicks) {
@@ -190,6 +310,12 @@ function clearLines() {
   if (cleared) {
     lines += cleared;
     linesSinceSpecial += cleared;
+    linesSinceSpecialShape += cleared;
+    if (cleared === 4) {
+      pendingSingleRewards = Math.min(2, pendingSingleRewards + 1);
+      if (singleRewardSpawnsLeft === 0)
+        singleRewardSpawnsLeft = SINGLE_REWARD_WINDOW_SPAWNS;
+    }
     score += (LINE_SCORES[cleared] || 0) * level;
     level = Math.floor(lines / 10) + 1;
     dropInterval = Math.max(100, 1000 - (level - 1) * 90);
@@ -461,6 +587,10 @@ function init() {
   dropInterval = 1000;
   dropAccum = 0;
   linesSinceSpecial = 0;
+  linesSinceSpecialShape = 0;
+  pendingSingleRewards = 0;
+  singleRewardSpawnsLeft = 0;
+  hollowCooldownSpawns = 0;
   freezeRemainingMs = 0;
   nextRayIsRow = true;
   lastTime = performance.now();

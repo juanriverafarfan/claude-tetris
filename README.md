@@ -35,12 +35,15 @@ Es una versión jugable del Tetris clásico con todas las mecánicas que esperar
 
 - Tablero de **10 × 20** celdas.
 - Las **7 piezas estándar** (I, O, T, S, Z, J, L) con colores diferenciados.
+- **Piezas especiales ocasionales**: `+`, `U`, `Y` y `3×3` hueca como reto.
+- **Recompensa táctica `1×1`** tras hacer Tetris (4 líneas), que aparece dentro de las siguientes 3 piezas.
 - **Rotación** con _wall kicks_ básicos (pequeños desplazamientos para que la pieza pueda rotar pegada a la pared).
 - **Soft drop** (bajada acelerada) y **hard drop** (caída instantánea).
 - **Pieza fantasma** (_ghost piece_): muestra dónde aterrizará la pieza actual.
 - **Vista previa** de la siguiente pieza.
 - **Sistema de puntuación** clásico de Tetris (100 / 300 / 500 / 800 multiplicado por nivel).
 - **Niveles** que aumentan cada 10 líneas y aceleran la caída.
+- **Power-ups en piezas estándar** (bomb, ray, tint, gravity, freeze), sin combinarse con piezas especiales de forma.
 - **Pausa** y **Game Over** con opción de reinicio.
 
 ---
@@ -108,12 +111,14 @@ Aporta el aspecto visual con estética _dark / retro arcade_: fondo oscuro, tipo
 
 Contiene toda la lógica del juego. A grandes rasgos:
 
-- **Modelo del tablero**: una matriz `ROWS × COLS` donde cada celda guarda `0` (vacía) o un índice de color (1–7) que identifica la pieza.
-- **Piezas**: definidas como matrices cuadradas. Para rotar se calcula la transposición + reverso de filas (`rotateCW`).
+- **Modelo del tablero**: una matriz `ROWS × COLS` donde cada celda guarda `0` (vacía) o un índice de color de pieza.
+- **Piezas**: incluye tetrominós clásicos y piezas especiales (`+`, `U`, `Y`, `1×1`, `3×3` hueca). Para rotar se calcula transposición + reverso de filas (`rotateCW`), excepto en `+` y `1×1` (rotación ignorada).
 - **Detección de colisiones** (`collide`): comprueba que ninguna celda de la pieza salga del tablero ni se solape con bloques ya fijados.
 - **Wall kicks** (`tryRotate`): si la rotación choca, intenta desplazar la pieza ±1 y ±2 columnas antes de descartar el giro.
 - **Game loop** (`loop`): basado en `requestAnimationFrame`, acumula el tiempo transcurrido y baja la pieza una fila cuando se supera `dropInterval`.
 - **Limpieza de líneas** (`clearLines`): recorre el tablero de abajo hacia arriba; cada fila completa se elimina y se inserta una vacía en la cima.
+- **Reglas especiales de aparición**: las piezas de forma especial salen de manera ocasional (frecuencia media con probabilidad creciente + pity), y la `3×3` hueca tiene cooldown para evitar rachas.
+- **Recompensa por Tetris**: al limpiar 4 líneas, se agenda una pieza `1×1` para aparecer dentro de las siguientes 3 piezas.
 - **Puntuación**: usa la tabla clásica `[0, 100, 300, 500, 800]` multiplicada por el nivel actual; el hard drop suma 2 puntos por celda recorrida y el soft drop 1 punto por fila.
 - **Nivel y velocidad**: el nivel sube cada 10 líneas; la velocidad de caída se calcula como `max(100, 1000 − (level − 1) × 90)` milisegundos.
 - **Ghost piece** (`ghostY`): proyecta la posición final de la pieza actual hacia abajo y la dibuja con `globalAlpha = 0.2`.
@@ -123,7 +128,7 @@ Contiene toda la lógica del juego. A grandes rasgos:
 ```
 init()
   ├─ createBoard()                  → matriz vacía
-  ├─ next = randomPiece()
+  ├─ next = createNextPiece()
   ├─ spawn()                        → mueve next a current y genera nueva next
   └─ requestAnimationFrame(loop)
         ↓
@@ -173,7 +178,7 @@ Algunos parámetros fáciles de tunear en `game.js`:
 | `COLS`         | Columnas del tablero                     | `10`                  |
 | `ROWS`         | Filas del tablero                        | `20`                  |
 | `BLOCK`        | Tamaño en píxeles de cada celda          | `30`                  |
-| `COLORS`       | Paleta de colores por tipo de pieza      | 7 colores             |
+| `COLORS`       | Paleta de colores por tipo de pieza      | 13 colores útiles     |
 | `LINE_SCORES`  | Puntos por 1, 2, 3 o 4 líneas eliminadas | `[0,100,300,500,800]` |
 | `dropInterval` | Velocidad inicial de caída en ms         | `1000`                |
 
