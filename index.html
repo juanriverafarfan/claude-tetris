@@ -10,7 +10,10 @@
     <div class="wrapper">
       <h1 class="game-title">TETRIS</h1>
       <div class="game-container">
-        <canvas id="board" width="300" height="600"></canvas>
+        <div class="board-stack" id="board-stack">
+          <canvas id="board" width="300" height="600"></canvas>
+          <div id="fx-layer" class="fx-layer" aria-live="polite"></div>
+        </div>
 
         <aside class="panel">
           <div class="panel-section">
@@ -24,6 +27,16 @@
           <div class="panel-section">
             <span class="label">LEVEL</span>
             <span class="value" id="level">1</span>
+          </div>
+
+          <div class="panel-section">
+            <span class="label">COMBO</span>
+            <span class="value mini" id="combo">x1</span>
+          </div>
+
+          <div class="panel-section">
+            <span class="label">B2B TETRIS</span>
+            <span class="value mini" id="b2b">OFF</span>
           </div>
 
           <div class="panel-section">

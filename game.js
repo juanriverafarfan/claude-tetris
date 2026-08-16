@@ -101,6 +101,9 @@ const SPECIAL_SHAPE_STEP_CHANCE = 0.2;
 const SPECIAL_SHAPE_MAX_CHANCE = 0.8;
 const HOLLOW_COOLDOWN_SPAWNS = 6;
 const SINGLE_REWARD_WINDOW_SPAWNS = 3;
+const T_SPIN_BONUS_BY_LINES = [400, 800, 1200, 1600];
+const PERFECT_CLEAR_BONUS = 2000;
+const B2B_TETRIS_BONUS_FACTOR = 0.5;
 
 const SPECIAL_SHAPE_WEIGHTS = [
   { type: TYPE_PLUS, weight: 35 },
@@ -118,10 +121,14 @@ const nextCtx = nextCanvas.getContext("2d");
 const scoreEl = document.getElementById("score");
 const linesEl = document.getElementById("lines");
 const levelEl = document.getElementById("level");
+const comboEl = document.getElementById("combo");
+const b2bEl = document.getElementById("b2b");
 const overlay = document.getElementById("overlay");
 const overlayTitle = document.getElementById("overlay-title");
 const overlayScore = document.getElementById("overlay-score");
 const restartBtn = document.getElementById("restart-btn");
+const fxLayer = document.getElementById("fx-layer");
+const boardStack = document.getElementById("board-stack");
 const specialCurrentEl = document.getElementById("special-current");
 const specialNextEl = document.getElementById("special-next");
 const freezeEl = document.getElementById("freeze");
@@ -143,6 +150,12 @@ let linesSinceSpecialShape,
   pendingSingleRewards,
   singleRewardSpawnsLeft,
   hollowCooldownSpawns;
+let comboChain,
+  backToBackTetris,
+  lastMoveWasRotation,
+  lastRotationUsedKick,
+  audioContext,
+  audioReady;
 
 function createBoard() {
   return Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
@@ -277,6 +290,11 @@ function rotateCW(shape) {
   return result;
 }
 
+function clearRotationContext() {
+  lastMoveWasRotation = false;
+  lastRotationUsedKick = false;
+}
+
 function tryRotate() {
   if (NON_ROTATABLE_TYPES.has(current.type)) return;
   const rotated = rotateCW(current.shape);
@@ -285,6 +303,8 @@ function tryRotate() {
     if (!collide(rotated, current.x + kick, current.y)) {
       current.shape = rotated;
       current.x += kick;
+      lastMoveWasRotation = true;
+      lastRotationUsedKick = kick !== 0;
       return;
     }
   }
@@ -307,6 +327,8 @@ function clearLines() {
       r++;
     }
   }
+
+  let didPerfectClear = false;
   if (cleared) {
     lines += cleared;
     linesSinceSpecial += cleared;
@@ -316,11 +338,13 @@ function clearLines() {
       if (singleRewardSpawnsLeft === 0)
         singleRewardSpawnsLeft = SINGLE_REWARD_WINDOW_SPAWNS;
     }
-    score += (LINE_SCORES[cleared] || 0) * level;
+    didPerfectClear = board.every((row) => row.every((cell) => cell === 0));
     level = Math.floor(lines / 10) + 1;
     dropInterval = Math.max(100, 1000 - (level - 1) * 90);
     updateHUD();
   }
+
+  return { cleared, didPerfectClear };
 }
 
 function ghostY() {
@@ -339,6 +363,7 @@ function hardDrop() {
 function softDrop() {
   if (!collide(current.shape, current.x, current.y + 1)) {
     current.y++;
+    clearRotationContext();
     score += 1;
     updateHUD();
   } else {
@@ -346,10 +371,211 @@ function softDrop() {
   }
 }
 
+function countBlockedTSpinCorners(piece) {
+  const centerX = piece.x + 1;
+  const centerY = piece.y + 1;
+  const corners = [
+    { x: centerX - 1, y: centerY - 1 },
+    { x: centerX + 1, y: centerY - 1 },
+    { x: centerX - 1, y: centerY + 1 },
+    { x: centerX + 1, y: centerY + 1 },
+  ];
+
+  let blocked = 0;
+  for (const corner of corners) {
+    if (
+      corner.x < 0 ||
+      corner.x >= COLS ||
+      corner.y < 0 ||
+      corner.y >= ROWS ||
+      board[corner.y][corner.x] !== 0
+    ) {
+      blocked++;
+    }
+  }
+
+  return blocked;
+}
+
+function detectTSpin(piece) {
+  if (piece.type !== 3) return false;
+  if (!lastMoveWasRotation) return false;
+  return countBlockedTSpinCorners(piece) >= 3;
+}
+
+function getComboMultiplier() {
+  return comboChain >= 1 ? comboChain + 1 : 1;
+}
+
+function getLineBaseScore(clearedLines) {
+  if (clearedLines <= 0) return 0;
+  if (clearedLines < LINE_SCORES.length)
+    return LINE_SCORES[clearedLines] * level;
+  return LINE_SCORES[LINE_SCORES.length - 1] * level;
+}
+
+function resolveLockScoring(lockPieceRef, clearResult, wasTSpin) {
+  const clearedLines = clearResult.cleared;
+  const wasTetris = clearedLines === 4;
+  const hadBackToBackBefore = backToBackTetris;
+
+  if (clearedLines > 0) {
+    comboChain += 1;
+  } else {
+    comboChain = -1;
+  }
+
+  const comboMultiplier = getComboMultiplier();
+  const baseLineScore = getLineBaseScore(clearedLines);
+  const tspinBonus = wasTSpin
+    ? (T_SPIN_BONUS_BY_LINES[Math.min(clearedLines, 3)] || 0) * level
+    : 0;
+  const b2bBonus =
+    wasTetris && hadBackToBackBefore
+      ? Math.floor(baseLineScore * B2B_TETRIS_BONUS_FACTOR)
+      : 0;
+  const perfectClearBonus = clearResult.didPerfectClear
+    ? PERFECT_CLEAR_BONUS * level
+    : 0;
+
+  let lockScore = baseLineScore + tspinBonus + b2bBonus + perfectClearBonus;
+  if (clearedLines > 0) {
+    lockScore = Math.floor(lockScore * comboMultiplier);
+  }
+  score += lockScore;
+
+  if (wasTetris) {
+    backToBackTetris = true;
+  } else if (clearedLines > 0) {
+    backToBackTetris = false;
+  }
+
+  const events = [];
+  if (comboMultiplier > 1 && clearedLines > 0) {
+    events.push({
+      text: `COMBO x${comboMultiplier}`,
+      kind: "combo",
+      intensity: Math.min(1, 0.4 + comboMultiplier * 0.1),
+    });
+  }
+  if (wasTSpin) {
+    const suffix = clearedLines > 0 ? ` ${clearedLines}` : "";
+    events.push({
+      text: `T-SPIN${suffix}`,
+      kind: "tspin",
+      intensity: 0.85,
+    });
+  }
+  if (wasTetris && hadBackToBackBefore) {
+    events.push({ text: "B2B TETRIS", kind: "b2b", intensity: 0.9 });
+  }
+  if (clearResult.didPerfectClear) {
+    events.push({ text: "PERFECT CLEAR", kind: "pc", intensity: 1 });
+  }
+
+  return {
+    clearedLines,
+    lockScore,
+    comboMultiplier,
+    wasTSpin,
+    wasTetris,
+    didPerfectClear: clearResult.didPerfectClear,
+    events,
+  };
+}
+
+function ensureAudioContext() {
+  if (audioContext) {
+    if (audioContext.state === "suspended") audioContext.resume();
+    return;
+  }
+  const Context = window.AudioContext || window.webkitAudioContext;
+  if (!Context) return;
+  audioContext = new Context();
+  if (audioContext.state === "suspended") audioContext.resume();
+}
+
+function playTone(frequency, durationMs, volume, waveType) {
+  if (!audioContext || !audioReady) return;
+  const oscillator = audioContext.createOscillator();
+  const gain = audioContext.createGain();
+  const now = audioContext.currentTime;
+  oscillator.type = waveType;
+  oscillator.frequency.setValueAtTime(frequency, now);
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(volume, now + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + durationMs / 1000);
+  oscillator.connect(gain);
+  gain.connect(audioContext.destination);
+  oscillator.start(now);
+  oscillator.stop(now + durationMs / 1000 + 0.02);
+}
+
+function playEventSound(eventKind, intensity) {
+  if (!audioReady) return;
+  if (eventKind === "combo") {
+    playTone(360 + intensity * 320, 120, 0.05, "triangle");
+    return;
+  }
+  if (eventKind === "tspin") {
+    playTone(420, 130, 0.055, "sawtooth");
+    playTone(560, 180, 0.05, "triangle");
+    return;
+  }
+  if (eventKind === "b2b") {
+    playTone(300, 120, 0.055, "square");
+    playTone(450, 140, 0.05, "square");
+    return;
+  }
+  if (eventKind === "pc") {
+    playTone(300, 120, 0.06, "triangle");
+    playTone(500, 170, 0.06, "triangle");
+    playTone(700, 210, 0.05, "triangle");
+  }
+}
+
+function triggerBoardFlash(kind) {
+  if (!boardStack) return;
+  const className = `flash-${kind}`;
+  boardStack.classList.remove(className);
+  void boardStack.offsetWidth;
+  boardStack.classList.add(className);
+  window.setTimeout(() => boardStack.classList.remove(className), 260);
+}
+
+function showFxToast(text, kind, delayMs) {
+  if (!fxLayer) return;
+  const toast = document.createElement("div");
+  toast.className = `fx-toast ${kind}`;
+  toast.textContent = text;
+  toast.style.animationDelay = `${delayMs}ms`;
+  toast.addEventListener("animationend", () => toast.remove());
+  fxLayer.appendChild(toast);
+}
+
+function dispatchLockEvents(lockSummary) {
+  if (!lockSummary.events.length) return;
+  lockSummary.events.forEach((eventItem, index) => {
+    const delayMs = index * 150;
+    showFxToast(eventItem.text, eventItem.kind, delayMs);
+    window.setTimeout(
+      () => playEventSound(eventItem.kind, eventItem.intensity),
+      delayMs,
+    );
+    window.setTimeout(() => triggerBoardFlash(eventItem.kind), delayMs);
+  });
+}
+
 function lockPiece() {
+  const lockPieceRef = current;
   merge();
+  const wasTSpin = detectTSpin(lockPieceRef);
   applyPowerUpEffect();
-  clearLines();
+  const clearResult = clearLines();
+  const lockSummary = resolveLockScoring(lockPieceRef, clearResult, wasTSpin);
+  dispatchLockEvents(lockSummary);
+  clearRotationContext();
+  updateHUD();
   spawn();
 }
 
@@ -429,6 +655,7 @@ function applyPowerUpEffect() {
 function spawn() {
   current = next;
   next = createNextPiece();
+  clearRotationContext();
   if (collide(current.shape, current.x, current.y)) {
     endGame();
   }
@@ -449,6 +676,8 @@ function updateHUD() {
   scoreEl.textContent = score.toLocaleString();
   linesEl.textContent = lines;
   levelEl.textContent = level;
+  if (comboEl) comboEl.textContent = `x${Math.max(1, getComboMultiplier())}`;
+  if (b2bEl) b2bEl.textContent = backToBackTetris ? "ON" : "OFF";
   if (specialCurrentEl)
     specialCurrentEl.textContent = formatPowerName(
       current?.powerUpKind || null,
@@ -567,6 +796,7 @@ function loop(ts) {
       dropAccum = 0;
       if (!collide(current.shape, current.x, current.y + 1)) {
         current.y++;
+        clearRotationContext();
       } else {
         lockPiece();
       }
@@ -591,8 +821,13 @@ function init() {
   pendingSingleRewards = 0;
   singleRewardSpawnsLeft = 0;
   hollowCooldownSpawns = 0;
+  comboChain = -1;
+  backToBackTetris = false;
+  lastMoveWasRotation = false;
+  lastRotationUsedKick = false;
   freezeRemainingMs = 0;
   nextRayIsRow = true;
+  audioReady = false;
   lastTime = performance.now();
   next = createNextPiece();
   spawn();
@@ -603,6 +838,10 @@ function init() {
 }
 
 document.addEventListener("keydown", (e) => {
+  if (!audioReady) {
+    ensureAudioContext();
+    audioReady = !!audioContext;
+  }
   if (e.code === "KeyP") {
     togglePause();
     return;
@@ -617,10 +856,16 @@ document.addEventListener("keydown", (e) => {
   if (paused) return;
   switch (e.code) {
     case "ArrowLeft":
-      if (!collide(current.shape, current.x - 1, current.y)) current.x--;
+      if (!collide(current.shape, current.x - 1, current.y)) {
+        current.x--;
+        clearRotationContext();
+      }
       break;
     case "ArrowRight":
-      if (!collide(current.shape, current.x + 1, current.y)) current.x++;
+      if (!collide(current.shape, current.x + 1, current.y)) {
+        current.x++;
+        clearRotationContext();
+      }
       break;
     case "ArrowDown":
       softDrop();
@@ -638,5 +883,9 @@ document.addEventListener("keydown", (e) => {
 });
 
 restartBtn.addEventListener("click", init);
+restartBtn.addEventListener("pointerdown", () => {
+  ensureAudioContext();
+  audioReady = !!audioContext;
+});
 
 init();
