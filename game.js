@@ -161,6 +161,7 @@ let comboChain,
   audioContext,
   audioReady;
 let selectedStartLevel = 1;
+let activeStartLevel = 1;
 
 function createBoard() {
   return Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
@@ -344,7 +345,7 @@ function clearLines() {
         singleRewardSpawnsLeft = SINGLE_REWARD_WINDOW_SPAWNS;
     }
     didPerfectClear = board.every((row) => row.every((cell) => cell === 0));
-    level = selectedStartLevel + Math.floor(lines / 10);
+    level = activeStartLevel + Math.floor(lines / 10);
     dropInterval = Math.max(100, 1000 - (level - 1) * 90);
     updateHUD();
   }
@@ -815,7 +816,8 @@ function init() {
   board = createBoard();
   score = 0;
   lines = 0;
-  level = selectedStartLevel;
+  activeStartLevel = selectedStartLevel;
+  level = activeStartLevel;
   paused = false;
   gameOver = false;
   dropInterval = Math.max(100, 1000 - (level - 1) * 90);
