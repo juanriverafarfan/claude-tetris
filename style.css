@@ -204,6 +204,50 @@ body {
   border-radius: 4px;
 }
 
+/* ---- Selector de tema ---- */
+.theme-select {
+  background: #1a1a25;
+  color: #e0e0e0;
+  border: 1px solid #2a2a3a;
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.theme-select:focus {
+  outline: 1px solid #7aa2f7;
+}
+
+/* ---- Temas visuales ---- */
+body.theme-neon {
+  background: #000000;
+}
+
+body.theme-neon #board,
+body.theme-neon #next-canvas {
+  background: #000000;
+  border-color: #1a1a2a;
+  box-shadow:
+    0 0 30px rgba(0, 255, 249, 0.15),
+    0 0 60px rgba(255, 0, 224, 0.1);
+}
+
+body.theme-neon .game-title {
+  color: #00fff9;
+  text-shadow:
+    0 0 12px rgba(0, 255, 249, 0.7),
+    0 0 28px rgba(255, 0, 224, 0.4);
+}
+
+body.theme-pastel #board,
+body.theme-pastel #next-canvas {
+  background: #24222c;
+  border-color: #3a3646;
+}
+
+
 /* ---- Controles ---- */
 .controls ul {
   list-style: none;

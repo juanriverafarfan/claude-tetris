@@ -88,6 +88,53 @@ const PIECES = [
   ], // 3x3 hollow
 ];
 
+const THEME_STORAGE_KEY = "tetris-theme";
+const DEFAULT_THEME = "retro";
+
+const THEME_PALETTES = {
+  retro: COLORS,
+  neon: [
+    null,
+    "#00fff9", // I
+    "#fff700", // O
+    "#ff00e0", // T
+    "#00ff85", // S
+    "#ff2d55", // Z
+    "#4d5eff", // J
+    "#5ec8ff", // L
+    "#ff36b0",
+    "#ffae00", // +
+    "#00e5c8", // U
+    "#c6ff4d", // Y
+    "#fff700", // 1x1
+    "#ff1f4d", // hollow
+  ],
+  pastel: [
+    null,
+    "#a8e6f0", // I
+    "#fff3b0", // O
+    "#d8b4e2", // T
+    "#b8e2c8", // S
+    "#f4b8b8", // Z
+    "#b8c2e8", // J
+    "#c8e0f4", // L
+    "#f4b8d8",
+    "#f4d4a8", // +
+    "#a8ded4", // U
+    "#d4e8a8", // Y
+    "#fff8c8", // 1x1
+    "#f4a8a8", // hollow
+  ],
+  pixel: COLORS,
+};
+
+const THEMES = {
+  retro: { style: "retro", colors: THEME_PALETTES.retro },
+  neon: { style: "neon", colors: THEME_PALETTES.neon },
+  pastel: { style: "pastel", colors: THEME_PALETTES.pastel },
+  pixel: { style: "pixel", colors: THEME_PALETTES.pixel },
+};
+
 const LINE_SCORES = [0, 100, 300, 500, 800];
 const HIGHSCORES_KEY = "tetris-highscores";
 const MAX_HIGHSCORES = 5;
@@ -144,6 +191,9 @@ const resetScoresBtn = document.getElementById("reset-scores-btn");
 const highscoreEntryEl = document.getElementById("highscore-entry");
 const playerNameInput = document.getElementById("player-name-input");
 const saveScoreBtn = document.getElementById("save-score-btn");
+const themeSelect = document.getElementById("theme-select");
+
+let currentTheme;
 
 let board,
   current,
@@ -707,16 +757,103 @@ function updateHUD() {
         : "0.0s";
 }
 
+function applyTheme(themeName) {
+  if (!THEMES[themeName]) themeName = DEFAULT_THEME;
+  currentTheme = themeName;
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, currentTheme);
+  } catch (e) {
+    // localStorage no disponible (modo privado, etc.) — ignorar
+  }
+  document.body.classList.remove(
+    "theme-retro",
+    "theme-neon",
+    "theme-pastel",
+    "theme-pixel",
+  );
+  document.body.classList.add(`theme-${currentTheme}`);
+  if (themeSelect) themeSelect.value = currentTheme;
+}
+
+function loadStoredTheme() {
+  let stored = DEFAULT_THEME;
+  try {
+    stored = localStorage.getItem(THEME_STORAGE_KEY) || DEFAULT_THEME;
+  } catch (e) {
+    stored = DEFAULT_THEME;
+  }
+  applyTheme(stored);
+}
+
 function drawBlock(context, x, y, colorIndex, size, alpha) {
   if (!colorIndex) return;
-  const color = COLORS[colorIndex];
+  const theme = THEMES[currentTheme] || THEMES.retro;
+  const color = theme.colors[colorIndex] || COLORS[colorIndex];
+  const px = x * size;
+  const py = y * size;
+
+  context.save();
   context.globalAlpha = alpha ?? 1;
-  context.fillStyle = color;
-  context.fillRect(x * size + 1, y * size + 1, size - 2, size - 2);
-  // highlight
-  context.fillStyle = "rgba(255,255,255,0.12)";
-  context.fillRect(x * size + 1, y * size + 1, size - 2, 4);
-  context.globalAlpha = 1;
+
+  if (theme.style === "neon") {
+    context.shadowBlur = 8;
+    context.shadowColor = color;
+    context.fillStyle = color;
+    context.fillRect(px + 1, py + 1, size - 2, size - 2);
+    context.shadowBlur = 0;
+    context.strokeStyle = "rgba(255,255,255,0.5)";
+    context.lineWidth = 1;
+    context.strokeRect(px + 1.5, py + 1.5, size - 3, size - 3);
+  } else if (theme.style === "pastel") {
+    const radius = Math.max(2, size * 0.18);
+    const rx = px + 1,
+      ry = py + 1,
+      rw = size - 2,
+      rh = size - 2;
+    context.fillStyle = color;
+    context.beginPath();
+    if (typeof context.roundRect === "function") {
+      context.roundRect(rx, ry, rw, rh, radius);
+    } else {
+      context.moveTo(rx + radius, ry);
+      context.arcTo(rx + rw, ry, rx + rw, ry + rh, radius);
+      context.arcTo(rx + rw, ry + rh, rx, ry + rh, radius);
+      context.arcTo(rx, ry + rh, rx, ry, radius);
+      context.arcTo(rx, ry, rx + rw, ry, radius);
+      context.closePath();
+    }
+    context.fill();
+    context.fillStyle = "rgba(255,255,255,0.3)";
+    context.beginPath();
+    context.arc(px + size * 0.32, py + size * 0.32, size * 0.13, 0, Math.PI * 2);
+    context.fill();
+  } else if (theme.style === "pixel") {
+    context.fillStyle = color;
+    context.fillRect(px + 1, py + 1, size - 2, size - 2);
+    context.save();
+    context.beginPath();
+    context.rect(px + 1, py + 1, size - 2, size - 2);
+    context.clip();
+    context.strokeStyle = "rgba(0,0,0,0.35)";
+    context.lineWidth = 1;
+    context.beginPath();
+    for (let i = -size; i < size * 2; i += 4) {
+      context.moveTo(px + i, py + size);
+      context.lineTo(px + i + size, py);
+    }
+    context.stroke();
+    context.restore();
+    context.fillStyle = "rgba(255,255,255,0.15)";
+    context.fillRect(px + 1, py + 1, size - 2, 3);
+  } else {
+    // retro
+    context.fillStyle = color;
+    context.fillRect(px + 1, py + 1, size - 2, size - 2);
+    context.fillStyle = "rgba(255,255,255,0.12)";
+    context.fillRect(px + 1, py + 1, size - 2, 4);
+  }
+
+  context.restore();
 }
 
 function drawGrid() {
@@ -1046,4 +1183,12 @@ if (saveScoreBtn) saveScoreBtn.addEventListener("click", submitHighscore);
 if (resetScoresBtn) resetScoresBtn.addEventListener("click", resetHighscores);
 
 renderHighscores(null);
+
+if (themeSelect) {
+  themeSelect.addEventListener("change", (e) => {
+    applyTheme(e.target.value);
+  });
+}
+
+loadStoredTheme();
 init();
