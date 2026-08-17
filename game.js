@@ -132,6 +132,10 @@ const boardStack = document.getElementById("board-stack");
 const specialCurrentEl = document.getElementById("special-current");
 const specialNextEl = document.getElementById("special-next");
 const freezeEl = document.getElementById("freeze");
+const pauseOverlay = document.getElementById("pause-overlay");
+const resumeBtn = document.getElementById("resume-btn");
+const pauseRestartBtn = document.getElementById("pause-restart-btn");
+const startLevelSelect = document.getElementById("start-level-select");
 
 let board,
   current,
@@ -156,6 +160,7 @@ let comboChain,
   lastRotationUsedKick,
   audioContext,
   audioReady;
+let selectedStartLevel = 1;
 
 function createBoard() {
   return Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
@@ -339,7 +344,7 @@ function clearLines() {
         singleRewardSpawnsLeft = SINGLE_REWARD_WINDOW_SPAWNS;
     }
     didPerfectClear = board.every((row) => row.every((cell) => cell === 0));
-    level = Math.floor(lines / 10) + 1;
+    level = selectedStartLevel + Math.floor(lines / 10);
     dropInterval = Math.max(100, 1000 - (level - 1) * 90);
     updateHUD();
   }
@@ -769,13 +774,12 @@ function togglePause() {
   if (gameOver) return;
   paused = !paused;
   if (!paused) {
+    pauseOverlay.classList.add("hidden");
     lastTime = performance.now();
     loop(lastTime);
   } else {
     cancelAnimationFrame(animId);
-    overlayTitle.textContent = "PAUSA";
-    overlayScore.textContent = "";
-    overlay.classList.remove("hidden");
+    pauseOverlay.classList.remove("hidden");
   }
 }
 
@@ -811,10 +815,10 @@ function init() {
   board = createBoard();
   score = 0;
   lines = 0;
-  level = 1;
+  level = selectedStartLevel;
   paused = false;
   gameOver = false;
-  dropInterval = 1000;
+  dropInterval = Math.max(100, 1000 - (level - 1) * 90);
   dropAccum = 0;
   linesSinceSpecial = 0;
   linesSinceSpecialShape = 0;
@@ -833,6 +837,7 @@ function init() {
   spawn();
   updateHUD();
   overlay.classList.add("hidden");
+  pauseOverlay.classList.add("hidden");
   cancelAnimationFrame(animId);
   animId = requestAnimationFrame(loop);
 }
@@ -842,7 +847,7 @@ document.addEventListener("keydown", (e) => {
     ensureAudioContext();
     audioReady = !!audioContext;
   }
-  if (e.code === "KeyP") {
+  if (e.code === "KeyP" || e.code === "Escape") {
     togglePause();
     return;
   }
@@ -887,5 +892,20 @@ restartBtn.addEventListener("pointerdown", () => {
   ensureAudioContext();
   audioReady = !!audioContext;
 });
+
+resumeBtn.addEventListener("click", () => {
+  if (paused) togglePause();
+});
+
+pauseRestartBtn.addEventListener("click", () => {
+  init();
+});
+
+startLevelSelect.addEventListener("change", (e) => {
+  const value = parseInt(e.target.value, 10);
+  if (!Number.isNaN(value)) selectedStartLevel = value;
+});
+
+startLevelSelect.value = String(selectedStartLevel);
 
 init();

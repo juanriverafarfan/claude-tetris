@@ -285,6 +285,87 @@ kbd {
   background: #9bbdff;
 }
 
+/* ---- Pause overlay ---- */
+.pause-box {
+  min-width: 220px;
+  padding: 8px 12px;
+}
+
+#pause-title {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 4px;
+  color: #7aa2f7;
+}
+
+.pause-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+#resume-btn,
+#pause-restart-btn {
+  background: #7aa2f7;
+  color: #0f0f17;
+  border: none;
+  border-radius: 6px;
+  padding: 10px 20px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 1px;
+  transition: background 0.15s;
+}
+
+#resume-btn:hover,
+#pause-restart-btn:hover {
+  background: #9bbdff;
+}
+
+#pause-restart-btn {
+  background: #3a3a5a;
+  color: #e0e0e0;
+}
+
+#pause-restart-btn:hover {
+  background: #4a4a6a;
+}
+
+.pause-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.pause-section.controls ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.pause-section.controls li {
+  font-size: 12px;
+  color: #888;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+#start-level-select {
+  background: #22223a;
+  border: 1px solid #3a3a5a;
+  border-radius: 4px;
+  color: #e0e0e0;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 14px;
+  padding: 4px 10px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .fx-toast {
     animation-duration: 320ms;
